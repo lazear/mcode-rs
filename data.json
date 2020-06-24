@@ -1,0 +1,14 @@
+[
+    {
+        "resource": "UniProt To STRING db mapping",
+        "source_uri": "https://string-db.org/mapping_files/uniprot/human.uniprot_2_string.2018.tsv.gz",
+        "target_uri": "./data/string_mapping.tsv",
+        "etl": "gzip"
+    },
+    {
+        "resource": "STRING db Human protein-protein links",
+        "source_uri": "https://stringdb-static.org/download/protein.links.v11.0/9606.protein.links.v11.0.txt.gz",
+        "target_uri": "./data/string.txt",
+        "etl": "gzip"
+    }
+]
