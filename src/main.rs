@@ -183,6 +183,15 @@ impl<'s> Graph<'s> {
         &self.nodes[ix.0 as usize]
     }
 
+    pub fn node_edges(&self, ix: NodeIx) -> EdgeIter<'_, 's> {
+        EdgeIter {
+            graph: &self,
+            edges: self.node(ix).edges.as_slice(),
+            idx: 0,
+            root: ix,
+        }
+    }
+
     pub fn edge(&self, ix: EdgeIx) -> &Edge {
         &self.edges[ix.0 as usize]
     }
@@ -223,7 +232,7 @@ impl<'s> Graph<'s> {
     fn density(&self) -> usize {
         let v = self.nodes.len();
         let v = v * (v - 1) / 2;
-        self.edges.len() / v
+        self.edges.len().checked_div(v).unwrap_or(0)
     }
 
     fn kcore(&self) -> (usize, Graph<'_>) {
@@ -280,10 +289,85 @@ impl<'s> Graph<'s> {
         (k, g)
     }
 
+    // fn kcore2(&self, start: NodeIx) -> (usize, Graph<'_>) {
+    //     let root = self.node(start);
+    //     let mut retain = self.node_edges(start).enumerate().map(|(ix, ni)| (ix, ni)).collect::<Vec<_>>();
+    //     let mut degrees = self.node_edges(start).map(|ni| self.node(ni).edges.len()).collect::<Vec<usize>>();
+    //     let mut k = 2;
+
+    //     let (k, nodes) = loop {
+    //         let mut remove = Vec::new();
+    //         retain = retain
+    //             .drain(..)
+    //             .filter(|&(idx, node_ix)| {
+    //                 if degrees[idx] < k {
+    //                     degrees[idx] = 0;
+    //                     remove.push((idx, node_ix));
+    //                     false
+    //                 } else {
+    //                     true
+    //                 }
+    //             })
+    //             .collect();
+
+    //         if retain.is_empty() {
+    //             break (k - 1, remove);
+    //         }
+
+    //         for (idx, nix) in remove {
+    //             let node = self.node(nix);
+    //             for &edge in &node.edges {
+    //                 let e = self.edge(edge);
+    //                 degrees[e.a.0 as usize] = degrees[e.a.0 as usize].saturating_sub(1);
+    //                 degrees[e.b.0 as usize] = degrees[e.b.0 as usize].saturating_sub(1);
+    //             }
+    //         }
+    //         k += 1;
+    //     };
+
+    //     let mut g = Graph::default();
+    //     let mut s = HashSet::new();
+    //     for &(ix, node_id) in &nodes {
+    //         for &edge in &self.node(node_id).edges {
+    //             let edge = self.edge(edge);
+    //             if nodes.contains(&(ix, edge.a)) && nodes.contains(&(ix, edge.b)) {
+    //                 let na = self.node(edge.a);
+    //                 let nb = self.node(edge.b);
+    //                 let ga = g.add_node(na.id);
+    //                 let gb = g.add_node(nb.id);
+    //                 if s.insert((ga, gb)) && s.insert((gb, ga)) {
+    //                     g.add_edge(na.id, nb.id, edge.w);
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     (k, g)
+    // }
+
     fn weight(&self) -> usize {
         let (k, kg) = self.kcore();
         let dens = kg.density();
         k * dens
+    }
+}
+
+pub struct EdgeIter<'g, 's> {
+    graph: &'g Graph<'s>,
+    edges: &'g [EdgeIx],
+    idx: usize,
+    root: NodeIx,
+}
+
+impl<'g, 's> Iterator for EdgeIter<'g, 's> {
+    type Item = NodeIx;
+    fn next(&mut self) -> Option<Self::Item> {
+        let e = self.graph.edge(*self.edges.get(self.idx)?);
+        self.idx += 1;
+        if e.a == self.root {
+            Some(e.b)
+        } else {
+            Some(e.a)
+        }
     }
 }
 
@@ -305,11 +389,19 @@ fn main() -> io::Result<()> {
         g.add_edge(a, b, w);
     }
 
-    let mut g = g.subgraph(g.map["CCND1"]);
+    // let mut g = g.subgraph(g.map["CCND1"]);
+
+    for i in 0..g.nodes.len() {
+        let k = g.subgraph(NodeIx(i as u32));
+        // let w = g.kcore().1.weight();
+        let (k, gg) = k.kcore();
+        // println!("{} {} {}", g.nodes[i].id, k, gg.weight());
+    }
+
     // g.csv();
-    let (k, g) = g.kcore();
+    // let (k, g) = g.kcore2(g.map["PIN1"]);
     // g.graphviz();
-    dbg!(g.weight());
+    // dbg!(g.weight());
 
     Ok(())
 }
