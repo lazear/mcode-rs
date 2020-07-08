@@ -118,17 +118,23 @@ impl<T> DisjointSet<T> {
             Ordering::Equal => {
                 self.elements[pa].data = Some(f(a_data, b_data));
                 self.elements[pb].parent.replace(pa);
-                self.elements[pa].rank.replace(self.elements[pa].rank.get() + 1);
+                self.elements[pa]
+                    .rank
+                    .replace(self.elements[pa].rank.get() + 1);
             }
             Ordering::Less => {
                 self.elements[pb].data = Some(f(a_data, b_data));
                 self.elements[pa].parent.replace(pb);
-                self.elements[pb].rank.replace(self.elements[pb].rank.get() + 1);
+                self.elements[pb]
+                    .rank
+                    .replace(self.elements[pb].rank.get() + 1);
             }
             Ordering::Greater => {
                 self.elements[pa].data = Some(f(a_data, b_data));
                 self.elements[pb].parent.replace(pa);
-                self.elements[pa].rank.replace(self.elements[pa].rank.get() + 1);
+                self.elements[pa]
+                    .rank
+                    .replace(self.elements[pa].rank.get() + 1);
             }
         }
     }
