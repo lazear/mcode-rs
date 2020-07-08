@@ -221,17 +221,16 @@ impl<'s> Graph<'s> {
     }
 
     fn kcore(&mut self) -> (usize, Vec<usize>) {
-        let mut cores = std::iter::repeat(0)
-            .take(self.nodes.len())
-            .collect::<Vec<usize>>();
-        let mut degrees = self.nodes.iter().map(|n| n.edges.len()).collect::<Vec<_>>();
-        let mut k = 1;
         let mut retain = (0..self.nodes.len()).collect::<Vec<usize>>();
+        let mut degrees = self.nodes.iter().map(|n| n.edges.len()).collect::<Vec<_>>();
+        let mut k = 2;
+
         while !retain.is_empty() {
+            let n = retain.len();
             let v = std::mem::replace(&mut retain, Vec::new());
+
             for &idx in &v {
                 if degrees[idx] < k {
-                    cores[idx] = k.saturating_sub(1);
                     degrees[idx] = 0;
                     let node = &self.nodes[idx];
                     for &edge in &node.edges {
@@ -246,16 +245,15 @@ impl<'s> Graph<'s> {
             if retain.is_empty() {
                 return (k - 1, v);
             }
-
             k += 1;
         }
-        (k - 1, retain)
+        return (k, retain);
     }
 }
 
 fn main() -> io::Result<()> {
-    // let mut f = std::fs::File::open("data/cleaned.csv")?;
-    let mut f = std::fs::File::open("out.csv")?;
+    let mut f = std::fs::File::open("data/cleaned.csv")?;
+    // let mut f = std::fs::File::open("out.csv")?;
     let mut buffer = String::new();
     f.read_to_string(&mut buffer)?;
 
@@ -271,73 +269,26 @@ fn main() -> io::Result<()> {
         g.add_edge(a, b, w);
     }
 
+    let mut g = g.subgraph(g.map["PIN1"]);
+    g.csv();
     let (k, node_ix) = g.kcore();
-    let mut s = HashSet::new();
-    for &node_id in &node_ix {
-        for edge in &g.nodes[node_id].edges {
-            let edge = g.edge(*edge);
+    dbg!(k, node_ix);
+    // let mut s = HashSet::new();
+    // dbg!(&node_ix);
+    // for &node_id in &node_ix {
+    //     for edge in &g.nodes[node_id].edges {
+    //         let edge = g.edge(*edge);
 
-            if !s.insert((edge.a, edge.b)) || !s.insert((edge.b, edge.a)) {
-                continue;
-            }
+    //         if !s.insert((edge.a, edge.b)) || !s.insert((edge.b, edge.a)) {
+    //             continue;
+    //         }
 
-            if node_ix.contains(&(edge.a.0 as usize)) && node_ix.contains(&(edge.b.0 as usize)) {
-                println!("{} -- {}", edge.a.0, edge.b.0);
-            }
-        }
-    }
-
-    // dbg!(g
-    //     .bfs(g.map["Q13526"], 2)
-    //     .into_iter()
-    //     .map(|ix| g.nodes[ix.0 as usize].id)
-    //     .collect::<Vec<&str>>());
-
-    // for n in g.bfs(g.map["PIN1"], 1) {
-    //     println!("PIN1 -- {}", g.node(n).id);
-    // }
-
-    // let sub = g.subgraph(g.map["PIN1"]);
-    // // sub.csv();
-    // sub.graphviz();
-
-    // sub.kcore
-
-    // let mut weights = HashMap::new();
-
-    // for node in 0..g.nodes.len() {
-    //     if (node % 1000) == 0 {
-    //         eprintln!("{}", node);
+    //         if node_ix.contains(&(edge.a.0 as usize)) && node_ix.contains(&(edge.b.0 as usize)) {
+    //             println!("{} -- {}", g.nodes[edge.a.0 as usize].id, g.nodes[edge.b.0 as usize].id);
+    //         }
     //     }
-    //     let set = g.bfs(NodeIx(node as u32), 1);
-    //     weights.insert(g.nodes[node].id, set.len());
     // }
-
-    // let mut w = weights.into_iter().collect::<Vec<_>>();
-    // w.sort_by(|a, b| a.1.cmp(&b.1));
-
-    // for (n, s) in w {
-    //     println!("{} {}", n, s);
-    // }
-
-    // let c = prots.iter().copied().collect::<Counter>();
-    // let mut net = Network::default();
-
-    // for slice in prots.chunks(2) {
-    //     // if c.counts[slice[0]] > 5 || c.counts[slice[1]] > 5 {
-    //     //     continue;
-    //     // }
-    //     let a = net.add(slice[0]);
-    //     let b = net.add(slice[1]);
-    //     net.join(a, b);
-    // }
-
-    // dbg!(net.count());
-
-    // let mut out = std::fs::File::create("networks.csv")?;
-    // for (s, network_id) in net.iter() {
-    //     writeln!(out, "{},{}", s, network_id)?;
-    // }
+    // dbg!(k);
 
     Ok(())
 }
