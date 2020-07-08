@@ -229,10 +229,10 @@ impl<'s> Graph<'s> {
         }
     }
 
-    fn density(&self) -> usize {
-        let v = self.nodes.len();
-        let v = v * (v - 1) / 2;
-        self.edges.len().checked_div(v).unwrap_or(0)
+    fn density(&self) -> f32 {
+        let v = self.nodes.len() as f32;
+        let v = v * (v - 1.0);
+        2.0 * self.edges.len() as f32 / v
     }
 
     fn kcore(&self) -> (usize, Graph<'_>) {
@@ -344,10 +344,10 @@ impl<'s> Graph<'s> {
     //     (k, g)
     // }
 
-    fn weight(&self) -> usize {
+    fn weight(&self) -> f32 {
         let (k, kg) = self.kcore();
         let dens = kg.density();
-        k * dens
+        k as f32 * dens
     }
 }
 
@@ -391,11 +391,12 @@ fn main() -> io::Result<()> {
 
     // let mut g = g.subgraph(g.map["CCND1"]);
 
-    for i in 0..g.nodes.len() {
+    for i in 0..300 {
         let k = g.subgraph(NodeIx(i as u32));
+        // k.graphviz();
         // let w = g.kcore().1.weight();
-        let (k, gg) = k.kcore();
-        // println!("{} {} {}", g.nodes[i].id, k, gg.weight());
+        // let (ks, gg) = k.kcore();
+        println!("{} {} ", g.nodes[i].id, k.weight());
     }
 
     // g.csv();
