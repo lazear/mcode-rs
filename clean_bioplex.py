@@ -11,8 +11,8 @@ with open('data/BioPlex_293T_Network_10K_Dec_2019.tsv') as f2:
         c = int(float(line[-1]) * 1000)
         if c < 700:
             continue
-        a = line[2].split('-')[0]
-        b = line[3].split('-')[0]
+        a = line[4].split('-')[0].replace("\"", '')
+        b = line[5].split('-')[0].replace("\"", '')
         
         data.append([a,b,c])
 

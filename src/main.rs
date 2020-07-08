@@ -159,7 +159,7 @@ impl<'s> Graph<'s> {
     pub fn subgraph(&self, node: NodeIx) -> Graph<'_> {
         let mut g = Graph::default();
         let set = self.bfs(node, 0);
-
+        let mut seen = HashSet::new();
         for &node_id in &set {
             let node = self.node(node_id);
             for &edge_ix in &node.edges {
@@ -169,12 +169,9 @@ impl<'s> Graph<'s> {
                     let nb = self.node(edge.b);
                     let ga = g.add_node(na.id);
                     let gb = g.add_node(nb.id);
-                    if g.direct_connection(ga, gb).is_some()
-                        || g.direct_connection(gb, ga).is_some()
-                    {
-                        continue;
+                    if seen.insert((ga, gb)) && seen.insert((gb, ga)) {
+                        g.add_edge(na.id, nb.id, edge.w);
                     }
-                    g.add_edge(na.id, nb.id, edge.w);
                 }
             }
         }
@@ -204,10 +201,61 @@ impl<'s> Graph<'s> {
         }
         None
     }
+
+    pub fn graphviz(&self) {
+        println!("graph G {{");
+        for edge in &self.edges {
+            let a = self.node(edge.a);
+            let b = self.node(edge.b);
+            println!("\t{} -- {}", a.id, b.id);
+        }
+        println!("}}");
+    }
+
+    pub fn csv(&self) {
+        for edge in &self.edges {
+            let a = self.node(edge.a);
+            let b = self.node(edge.b);
+            println!("{},{},{}", a.id, b.id, edge.w);
+        }
+    }
+
+    fn kcore(&mut self) -> (usize, Vec<usize>) {
+        let mut cores = std::iter::repeat(0)
+            .take(self.nodes.len())
+            .collect::<Vec<usize>>();
+        let mut degrees = self.nodes.iter().map(|n| n.edges.len()).collect::<Vec<_>>();
+        let mut k = 1;
+        let mut retain = (0..self.nodes.len()).collect::<Vec<usize>>();
+        while !retain.is_empty() {
+            let v = std::mem::replace(&mut retain, Vec::new());
+            for &idx in &v {
+                if degrees[idx] < k {
+                    cores[idx] = k.saturating_sub(1);
+                    degrees[idx] = 0;
+                    let node = &self.nodes[idx];
+                    for &edge in &node.edges {
+                        let e = self.edge(edge);
+                        degrees[e.a.0 as usize] = degrees[e.a.0 as usize].saturating_sub(1);
+                        degrees[e.b.0 as usize] = degrees[e.b.0 as usize].saturating_sub(1);
+                    }
+                } else {
+                    retain.push(idx)
+                }
+            }
+            if retain.is_empty() {
+                return (k - 1, v);
+            }
+
+            k += 1;
+        }
+        (k - 1, retain)
+    }
 }
 
 fn main() -> io::Result<()> {
-    let mut f = std::fs::File::open("data/cleaned.csv")?;
+    // let mut f = std::fs::File::open("data/cleaned.csv")?;
+    let mut f = std::fs::File::open("out.csv")?;
     let mut buffer = String::new();
     f.read_to_string(&mut buffer)?;
 
@@ -223,8 +271,21 @@ fn main() -> io::Result<()> {
         g.add_edge(a, b, w);
     }
 
-    dbg!(g.nodes.len());
-    dbg!(g.edges.len());
+    let (k, node_ix) = g.kcore();
+    let mut s = HashSet::new();
+    for &node_id in &node_ix {
+        for edge in &g.nodes[node_id].edges {
+            let edge = g.edge(*edge);
+
+            if !s.insert((edge.a, edge.b)) || !s.insert((edge.b, edge.a)) {
+                continue;
+            }
+
+            if node_ix.contains(&(edge.a.0 as usize)) && node_ix.contains(&(edge.b.0 as usize)) {
+                println!("{} -- {}", edge.a.0, edge.b.0);
+            }
+        }
+    }
 
     // dbg!(g
     //     .bfs(g.map["Q13526"], 2)
@@ -232,20 +293,15 @@ fn main() -> io::Result<()> {
     //     .map(|ix| g.nodes[ix.0 as usize].id)
     //     .collect::<Vec<&str>>());
 
-    g.bfs(g.map["Q13526"], 1);
+    // for n in g.bfs(g.map["PIN1"], 1) {
+    //     println!("PIN1 -- {}", g.node(n).id);
+    // }
 
-    let sub = g.subgraph(g.map["O95302"]);
-    dbg!(sub.nodes.len());
-    dbg!(sub.edges.len());
-    for node in &sub.nodes {
-        // println!("{} {}", node.id, node.edges.len());
-        for edge in &node.edges {
-            let a = sub.node(sub.edge(*edge).a);
-            let b = sub.node(sub.edge(*edge).b);
-            let id = if a.id == node.id { b.id } else { a.id };
-            println!("{} {} -> {}", node.edges.len(), node.id, id);
-        }
-    }
+    // let sub = g.subgraph(g.map["PIN1"]);
+    // // sub.csv();
+    // sub.graphviz();
+
+    // sub.kcore
 
     // let mut weights = HashMap::new();
 
