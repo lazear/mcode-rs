@@ -220,25 +220,34 @@ impl<'s> Graph<'s> {
         }
     }
 
-    fn kcore(&mut self) -> (usize, Vec<usize>) {
-        let mut retain = (0..self.nodes.len()).collect::<Vec<usize>>();
+    fn density(&self) -> usize {
+        let v = self.nodes.len();
+        let v = v * (v - 1) / 2;
+        self.edges.len() / v
+    }
+
+    fn kcore(&self) -> (usize, Graph<'_>) {
+        let mut retain = (0..self.nodes.len()).collect::<HashSet<usize>>();
         let mut degrees = self.nodes.iter().map(|n| n.edges.len()).collect::<Vec<_>>();
         let mut k = 2;
 
-        loop {
-            let v = std::mem::replace(&mut retain, Vec::new());
+        let (k, nodes) = loop {
             let mut remove = Vec::new();
-            for &idx in &v {
-                if degrees[idx] < k {
-                    degrees[idx] = 0;
-                    remove.push(idx);
-                } else {
-                    retain.push(idx);
-                }
-            }
+            retain = retain
+                .drain()
+                .filter(|&idx| {
+                    if degrees[idx] < k {
+                        degrees[idx] = 0;
+                        remove.push(idx);
+                        false
+                    } else {
+                        true
+                    }
+                })
+                .collect();
 
             if retain.is_empty() {
-                return (k - 1, v);
+                break (k - 1, remove);
             }
 
             for idx in remove {
@@ -249,9 +258,32 @@ impl<'s> Graph<'s> {
                     degrees[e.b.0 as usize] = degrees[e.b.0 as usize].saturating_sub(1);
                 }
             }
-
             k += 1;
+        };
+
+        let mut g = Graph::default();
+        let mut s = HashSet::new();
+        for &node_id in &nodes {
+            for edge in &self.nodes[node_id].edges {
+                let edge = self.edge(*edge);
+                if nodes.contains(&(edge.a.0 as usize)) && nodes.contains(&(edge.b.0 as usize)) {
+                    let na = self.node(edge.a);
+                    let nb = self.node(edge.b);
+                    let ga = g.add_node(na.id);
+                    let gb = g.add_node(nb.id);
+                    if s.insert((ga, gb)) && s.insert((gb, ga)) {
+                        g.add_edge(na.id, nb.id, edge.w);
+                    }
+                }
+            }
         }
+        (k, g)
+    }
+
+    fn weight(&self) -> usize {
+        let (k, kg) = self.kcore();
+        let dens = kg.density();
+        k * dens
     }
 }
 
@@ -273,29 +305,11 @@ fn main() -> io::Result<()> {
         g.add_edge(a, b, w);
     }
 
-    let mut g = g.subgraph(g.map["FKBP9"]);
+    let mut g = g.subgraph(g.map["CCND1"]);
     // g.csv();
-    let (k, node_ix) = g.kcore();
-    // dbg!(k, node_ix);
-    let mut s = HashSet::new();
-    // dbg!(&node_ix);
-    for &node_id in &node_ix {
-        for edge in &g.nodes[node_id].edges {
-            let edge = g.edge(*edge);
-
-            if !s.insert((edge.a, edge.b)) || !s.insert((edge.b, edge.a)) {
-                continue;
-            }
-
-            if node_ix.contains(&(edge.a.0 as usize)) && node_ix.contains(&(edge.b.0 as usize)) {
-                println!(
-                    "{} -- {}",
-                    g.nodes[edge.a.0 as usize].id, g.nodes[edge.b.0 as usize].id
-                );
-            }
-        }
-    }
-    dbg!(k);
+    let (k, g) = g.kcore();
+    // g.graphviz();
+    dbg!(g.weight());
 
     Ok(())
 }
