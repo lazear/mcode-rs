@@ -225,29 +225,33 @@ impl<'s> Graph<'s> {
         let mut degrees = self.nodes.iter().map(|n| n.edges.len()).collect::<Vec<_>>();
         let mut k = 2;
 
-        while !retain.is_empty() {
-            let n = retain.len();
+        loop {
             let v = std::mem::replace(&mut retain, Vec::new());
-
+            let mut remove = Vec::new();
             for &idx in &v {
                 if degrees[idx] < k {
                     degrees[idx] = 0;
-                    let node = &self.nodes[idx];
-                    for &edge in &node.edges {
-                        let e = self.edge(edge);
-                        degrees[e.a.0 as usize] = degrees[e.a.0 as usize].saturating_sub(1);
-                        degrees[e.b.0 as usize] = degrees[e.b.0 as usize].saturating_sub(1);
-                    }
+                    remove.push(idx);
                 } else {
-                    retain.push(idx)
+                    retain.push(idx);
                 }
             }
+
             if retain.is_empty() {
                 return (k - 1, v);
             }
+
+            for idx in remove {
+                let node = &self.nodes[idx];
+                for &edge in &node.edges {
+                    let e = self.edge(edge);
+                    degrees[e.a.0 as usize] = degrees[e.a.0 as usize].saturating_sub(1);
+                    degrees[e.b.0 as usize] = degrees[e.b.0 as usize].saturating_sub(1);
+                }
+            }
+
             k += 1;
         }
-        return (k, retain);
     }
 }
 
@@ -269,26 +273,29 @@ fn main() -> io::Result<()> {
         g.add_edge(a, b, w);
     }
 
-    let mut g = g.subgraph(g.map["PIN1"]);
-    g.csv();
+    let mut g = g.subgraph(g.map["FKBP9"]);
+    // g.csv();
     let (k, node_ix) = g.kcore();
-    dbg!(k, node_ix);
-    // let mut s = HashSet::new();
+    // dbg!(k, node_ix);
+    let mut s = HashSet::new();
     // dbg!(&node_ix);
-    // for &node_id in &node_ix {
-    //     for edge in &g.nodes[node_id].edges {
-    //         let edge = g.edge(*edge);
+    for &node_id in &node_ix {
+        for edge in &g.nodes[node_id].edges {
+            let edge = g.edge(*edge);
 
-    //         if !s.insert((edge.a, edge.b)) || !s.insert((edge.b, edge.a)) {
-    //             continue;
-    //         }
+            if !s.insert((edge.a, edge.b)) || !s.insert((edge.b, edge.a)) {
+                continue;
+            }
 
-    //         if node_ix.contains(&(edge.a.0 as usize)) && node_ix.contains(&(edge.b.0 as usize)) {
-    //             println!("{} -- {}", g.nodes[edge.a.0 as usize].id, g.nodes[edge.b.0 as usize].id);
-    //         }
-    //     }
-    // }
-    // dbg!(k);
+            if node_ix.contains(&(edge.a.0 as usize)) && node_ix.contains(&(edge.b.0 as usize)) {
+                println!(
+                    "{} -- {}",
+                    g.nodes[edge.a.0 as usize].id, g.nodes[edge.b.0 as usize].id
+                );
+            }
+        }
+    }
+    dbg!(k);
 
     Ok(())
 }
