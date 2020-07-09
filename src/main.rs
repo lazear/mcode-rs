@@ -1,10 +1,11 @@
-pub mod adjacency;
 pub mod disjoint;
 use disjoint::{DisjointSet, Element};
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::fs;
 use std::io;
 use std::io::prelude::*;
 use std::iter::FromIterator;
+use std::path::Path;
 
 struct Counter<'s> {
     pub counts: HashMap<&'s str, usize>,
@@ -183,8 +184,8 @@ impl<'s> Graph<'s> {
         &self.nodes[ix.0 as usize]
     }
 
-    pub fn node_edges(&self, ix: NodeIx) -> EdgeIter<'_, 's> {
-        EdgeIter {
+    pub fn neighbors(&self, ix: NodeIx) -> Neighbors<'_, 's> {
+        Neighbors {
             graph: &self,
             edges: self.node(ix).edges.as_slice(),
             idx: 0,
@@ -230,9 +231,23 @@ impl<'s> Graph<'s> {
     }
 
     fn density(&self) -> f32 {
-        let v = self.nodes.len() as f32;
-        let v = v * (v - 1.0);
+        let mut v = self.nodes.len() as f32;
+        v *= v - 1.0;
+        if v == 0.0 {
+            v = 1.0;
+        }
         2.0 * self.edges.len() as f32 / v
+    }
+
+    fn scored_density(&self) -> f32 {
+        let avg_weight = self.edges.iter().map(|edge| edge.w as u16).sum::<u16>() as f32
+            / self.edges.len() as f32;
+        let mut v = self.nodes.len() as f32;
+        v *= v - 1.0;
+        if v == 0.0 {
+            v = 1.0;
+        }
+        avg_weight * 2.0 * self.edges.len() as f32 / v
     }
 
     fn kcore(&self) -> (usize, Graph<'_>) {
@@ -289,76 +304,21 @@ impl<'s> Graph<'s> {
         (k, g)
     }
 
-    // fn kcore2(&self, start: NodeIx) -> (usize, Graph<'_>) {
-    //     let root = self.node(start);
-    //     let mut retain = self.node_edges(start).enumerate().map(|(ix, ni)| (ix, ni)).collect::<Vec<_>>();
-    //     let mut degrees = self.node_edges(start).map(|ni| self.node(ni).edges.len()).collect::<Vec<usize>>();
-    //     let mut k = 2;
-
-    //     let (k, nodes) = loop {
-    //         let mut remove = Vec::new();
-    //         retain = retain
-    //             .drain(..)
-    //             .filter(|&(idx, node_ix)| {
-    //                 if degrees[idx] < k {
-    //                     degrees[idx] = 0;
-    //                     remove.push((idx, node_ix));
-    //                     false
-    //                 } else {
-    //                     true
-    //                 }
-    //             })
-    //             .collect();
-
-    //         if retain.is_empty() {
-    //             break (k - 1, remove);
-    //         }
-
-    //         for (idx, nix) in remove {
-    //             let node = self.node(nix);
-    //             for &edge in &node.edges {
-    //                 let e = self.edge(edge);
-    //                 degrees[e.a.0 as usize] = degrees[e.a.0 as usize].saturating_sub(1);
-    //                 degrees[e.b.0 as usize] = degrees[e.b.0 as usize].saturating_sub(1);
-    //             }
-    //         }
-    //         k += 1;
-    //     };
-
-    //     let mut g = Graph::default();
-    //     let mut s = HashSet::new();
-    //     for &(ix, node_id) in &nodes {
-    //         for &edge in &self.node(node_id).edges {
-    //             let edge = self.edge(edge);
-    //             if nodes.contains(&(ix, edge.a)) && nodes.contains(&(ix, edge.b)) {
-    //                 let na = self.node(edge.a);
-    //                 let nb = self.node(edge.b);
-    //                 let ga = g.add_node(na.id);
-    //                 let gb = g.add_node(nb.id);
-    //                 if s.insert((ga, gb)) && s.insert((gb, ga)) {
-    //                     g.add_edge(na.id, nb.id, edge.w);
-    //                 }
-    //             }
-    //         }
-    //     }
-    //     (k, g)
-    // }
-
     fn weight(&self) -> f32 {
         let (k, kg) = self.kcore();
-        let dens = kg.density();
+        let dens = kg.scored_density();
         k as f32 * dens
     }
 }
 
-pub struct EdgeIter<'g, 's> {
+pub struct Neighbors<'g, 's> {
     graph: &'g Graph<'s>,
     edges: &'g [EdgeIx],
     idx: usize,
     root: NodeIx,
 }
 
-impl<'g, 's> Iterator for EdgeIter<'g, 's> {
+impl<'g, 's> Iterator for Neighbors<'g, 's> {
     type Item = NodeIx;
     fn next(&mut self) -> Option<Self::Item> {
         let e = self.graph.edge(*self.edges.get(self.idx)?);
@@ -371,9 +331,110 @@ impl<'g, 's> Iterator for EdgeIter<'g, 's> {
     }
 }
 
+fn read_or_generate_weights<P: AsRef<std::path::Path>>(
+    path: P,
+    graph: &Graph<'_>,
+) -> io::Result<HashMap<String, f32>> {
+    if path.as_ref().exists() {
+        let mut f = fs::File::open(path)?;
+        let mut weight_buffer = String::new();
+        f.read_to_string(&mut weight_buffer)?;
+        let mut weights = HashMap::new();
+        for line in weight_buffer.lines() {
+            let mut iter = line.split(' ');
+            let v = iter.next().unwrap();
+            let w = iter
+                .next()
+                .unwrap()
+                .replace("NaN", "0.0")
+                .parse::<f32>()
+                .unwrap();
+            weights.insert(v.into(), w);
+        }
+        Ok(weights)
+    } else {
+        let mut f = fs::File::create(path)?;
+        let mut weights = HashMap::new();
+        for i in 0..graph.nodes.len() {
+            let k = graph.subgraph(NodeIx(i as u32));
+            weights.insert(graph.nodes[i].id.into(), k.weight());
+        }
+
+        for (k, v) in &weights {
+            writeln!(f, "{} {}", k, v)?;
+        }
+
+        Ok(weights)
+    }
+}
+
+fn pick_seed(weights: &HashMap<String, f32>) -> &str {
+    let mut best = weights.iter().next().unwrap();
+    for (k, v) in weights {
+        if *v > *best.1 {
+            best = (k, v);
+        }
+    }
+    best.0
+}
+
+fn assign_complex<'s>(
+    graph: &Graph<'s>,
+    weights: &HashMap<String, f32>,
+    density: f32,
+) -> HashMap<&'s str, NodeIx> {
+    let mut membership = HashMap::new();
+    let mut complex_set = DisjointSet::new();
+    let mut stack = Vec::new();
+    let mut visited = HashSet::new();
+
+    let seed = graph.map[pick_seed(weights)];
+    stack.push(seed);
+
+    for ix in (0..graph.nodes.len() as u32).map(NodeIx) {
+        membership.insert(ix, complex_set.singleton(ix));
+    }
+
+    // save the last unvisited node id, so that we can traverse linearly
+    let mut ptr = NodeIx(0);
+    // outer loop, while we haven't visited every node in the graph
+    while visited.len() != graph.nodes.len() {
+        // depth-first traversal, starting from seed node
+        while let Some(nix) = stack.pop() {
+            visited.insert(nix);
+            let node = graph.node(nix);
+            for neighbor_ix in graph.neighbors(nix) {
+                let neighbor = graph.node(neighbor_ix);
+                if visited.insert(neighbor_ix) {
+                    if weights[neighbor.id] > (weights[node.id] * (1.0 - density)) {
+                        complex_set.union(|a, _| a, membership[&nix], membership[&neighbor_ix]);
+                    }
+                    stack.push(neighbor_ix);
+                }
+            }
+        }
+
+        for ix in (ptr.0..graph.nodes.len() as u32).map(NodeIx) {
+            if !visited.contains(&ix) {
+                ptr = ix;
+                break;
+            }
+        }
+        stack.push(ptr);
+    }
+
+    let mut complexes = HashMap::new();
+    for (ix, node) in graph.nodes.iter().enumerate() {
+        let element = membership[&NodeIx(ix as u32)];
+        complexes.insert(node.id, *complex_set.find(element));
+    }
+
+    complexes
+}
+
 fn main() -> io::Result<()> {
-    let mut f = std::fs::File::open("data/cleaned.csv")?;
-    // let mut f = std::fs::File::open("out.csv")?;
+    let mut f = fs::File::open("data/cleaned.csv")?;
+    // let mut f = fs::File::open("out.csv")?;
     let mut buffer = String::new();
     f.read_to_string(&mut buffer)?;
 
@@ -389,20 +450,22 @@ fn main() -> io::Result<()> {
         g.add_edge(a, b, w);
     }
 
-    // let mut g = g.subgraph(g.map["CCND1"]);
+    let weights = read_or_generate_weights("weights", &g)?;
 
-    for i in 0..300 {
-        let k = g.subgraph(NodeIx(i as u32));
-        // k.graphviz();
-        // let w = g.kcore().1.weight();
-        // let (ks, gg) = k.kcore();
-        println!("{} {} ", g.nodes[i].id, k.weight());
+    let map = assign_complex(&g, &weights, 0.8);
+
+    let mut uniq = HashMap::new();
+    for (k, v) in &map {
+        *uniq.entry(v).or_insert(0usize) += 1;
     }
-
-    // g.csv();
-    // let (k, g) = g.kcore2(g.map["PIN1"]);
-    // g.graphviz();
-    // dbg!(g.weight());
+    println!(
+        "uniq: {}, max: {}",
+        uniq.len(),
+        uniq.values().max().unwrap()
+    );
+    for (k, v) in map {
+        println!("{}\t{}", k, v.0)
+    }
 
     Ok(())
 }
