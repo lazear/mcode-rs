@@ -1,74 +1,9 @@
 pub mod disjoint;
-use disjoint::{DisjointSet, Element};
+use disjoint::DisjointSet;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::io;
 use std::io::prelude::*;
-use std::iter::FromIterator;
-use std::path::Path;
-
-struct Counter<'s> {
-    pub counts: HashMap<&'s str, usize>,
-}
-
-impl<'s> FromIterator<&'s str> for Counter<'s> {
-    fn from_iter<I: IntoIterator<Item = &'s str>>(iter: I) -> Self {
-        let mut counts = HashMap::new();
-        for i in iter {
-            *counts.entry(i).or_insert(0) += 1;
-        }
-        Counter { counts }
-    }
-}
-
-#[derive(Default, Debug)]
-struct Network<'s> {
-    set: DisjointSet<u32>,
-    map: HashMap<&'s str, Element>,
-    n: u32,
-}
-
-impl<'s> Network<'s> {
-    pub fn add(&mut self, s: &'s str) -> Element {
-        match self.map.get(s) {
-            Some(idx) => *idx,
-            None => {
-                let e = self.set.singleton(self.n);
-                self.n += 1;
-                self.map.insert(s, e);
-                e
-            }
-        }
-    }
-
-    pub fn join(&mut self, a: Element, b: Element) {
-        // arbitrarily pick the left element, doesn't really matter
-        self.set.union(|a, _| a, a, b)
-    }
-
-    pub fn count(&self) -> usize {
-        self.set.len()
-    }
-
-    pub fn iter(&self) -> NetworkIter<'_, 's> {
-        NetworkIter {
-            net: self.map.iter(),
-            set: &self.set,
-        }
-    }
-}
-
-pub struct NetworkIter<'a, 's> {
-    net: std::collections::hash_map::Iter<'a, &'s str, Element>,
-    set: &'a DisjointSet<u32>,
-}
-
-impl<'a, 's> Iterator for NetworkIter<'a, 's> {
-    type Item = (&'s str, u32);
-    fn next(&mut self) -> Option<Self::Item> {
-        self.net.next().map(|(k, v)| (*k, *self.set.find(*v)))
-    }
-}
 
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Hash)]
 pub struct EdgeIx(u32);
@@ -239,17 +174,6 @@ impl<'s> Graph<'s> {
         2.0 * self.edges.len() as f32 / v
     }
 
-    fn scored_density(&self) -> f32 {
-        let avg_weight = self.edges.iter().map(|edge| edge.w as u16).sum::<u16>() as f32
-            / self.edges.len() as f32;
-        let mut v = self.nodes.len() as f32;
-        v *= v - 1.0;
-        if v == 0.0 {
-            v = 1.0;
-        }
-        avg_weight * 2.0 * self.edges.len() as f32 / v
-    }
-
     fn kcore(&self) -> (usize, Graph<'_>) {
         let mut retain = (0..self.nodes.len()).collect::<HashSet<usize>>();
         let mut degrees = self.nodes.iter().map(|n| n.edges.len()).collect::<Vec<_>>();
@@ -306,7 +230,7 @@ impl<'s> Graph<'s> {
 
     fn weight(&self) -> f32 {
         let (k, kg) = self.kcore();
-        let dens = kg.scored_density();
+        let dens = kg.density();
         k as f32 * dens
     }
 }
@@ -331,6 +255,7 @@ impl<'g, 's> Iterator for Neighbors<'g, 's> {
     }
 }
 
+/// Cache intermediate results (k-core weights) in a file for faster testing
 fn read_or_generate_weights<P: AsRef<std::path::Path>>(
     path: P,
     graph: &Graph<'_>,
@@ -368,6 +293,7 @@ fn read_or_generate_weights<P: AsRef<std::path::Path>>(
     }
 }
 
+/// Pick a seed protein
 fn pick_seed(weights: &HashMap<String, f32>) -> &str {
     let mut best = weights.iter().next().unwrap();
     for (k, v) in weights {
@@ -378,6 +304,7 @@ fn pick_seed(weights: &HashMap<String, f32>) -> &str {
     best.0
 }
 
+/// use the MCODE algorithm to assign a protein to a complex
 fn assign_complex<'s>(
     graph: &Graph<'s>,
     weights: &HashMap<String, f32>,
@@ -434,11 +361,10 @@ fn assign_complex<'s>(
 
 fn main() -> io::Result<()> {
     let mut f = fs::File::open("data/cleaned.csv")?;
-    // let mut f = fs::File::open("out.csv")?;
     let mut buffer = String::new();
     f.read_to_string(&mut buffer)?;
 
-    let mut g = Graph::with_capacity(20_000);
+    let mut g = Graph::with_capacity(25_000);
     for line in buffer.lines().skip(1) {
         let mut iter = line.split(',');
         let a = iter.next().unwrap();
@@ -451,20 +377,11 @@ fn main() -> io::Result<()> {
     }
 
     let weights = read_or_generate_weights("weights", &g)?;
-
     let map = assign_complex(&g, &weights, 0.8);
+    let mut out = fs::File::create("output.tsv")?;
 
-    let mut uniq = HashMap::new();
-    for (k, v) in &map {
-        *uniq.entry(v).or_insert(0usize) += 1;
-    }
-    println!(
-        "uniq: {}, max: {}",
-        uniq.len(),
-        uniq.values().max().unwrap()
-    );
     for (k, v) in map {
-        println!("{}\t{}", k, v.0)
+        write!(out, "{}\t{}", k, v.0)?;
     }
 
     Ok(())

@@ -3,7 +3,8 @@ mapping = {}
 with open('data/string_mapping.tsv', 'r') as fm:    
     for line in fm:
         line = line.strip().split('\t')
-        uniprot = line[1].split('|')[1].split('_')[0]
+        # gene = line[1].split('|')[1].split('_')[0]
+        uniprot = line[1].split('|')[0]
         string = line[2]
 
         mapping[string] = uniprot 
